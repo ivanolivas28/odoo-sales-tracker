@@ -5,6 +5,7 @@ const settingsSchema = new Schema(
     key: { type: String, required: true, unique: true },
     googleRefreshToken: { type: String },
     spreadsheetId: { type: String },
+    analysisSheetId: { type: String },
   },
   { timestamps: true }
 );

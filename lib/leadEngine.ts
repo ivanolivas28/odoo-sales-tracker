@@ -1,10 +1,17 @@
-import { executeKw } from "@/lib/odoo";
+import { executeKw, fetchAllContactsPaginated, fetchSalesOrdersAboveThreshold } from "@/lib/odoo";
 import { connectMongo } from "@/lib/mongodb";
 import { Task, TASK_PRIORITY, type TaskType } from "@/models/Task";
 import { formatCurrency } from "@/lib/salesAggregates";
 import { fetchContactChannels, normalizeWhatsappNumber, whatsappLink } from "@/lib/contact";
 import { generateOutreachCopy } from "@/lib/anthropic";
-import { isGoogleConnected, syncLeadsSheet } from "@/lib/google";
+import {
+  isGoogleConnected,
+  syncLeadsSheet,
+  createOrGetAnalysisSheet,
+  writeContactsToAnalysisSheet,
+  writeSalesOrdersToAnalysisSheet,
+  writeQuotationsToAnalysisSheet,
+} from "@/lib/google";
 
 const URGENT_VIP_DAYS = 60;
 const HOT_QUOTATION_DAYS = 7;
@@ -286,6 +293,41 @@ async function upsertTask(candidate: TaskCandidate): Promise<"created" | "update
 
 export async function runSync() {
   await connectMongo();
+
+  // Sync analysis data to Google Sheets (all contacts, orders, quotations)
+  let analysisSheetUrl: string | undefined;
+  if (await isGoogleConnected()) {
+    try {
+      console.log("[SYNC] Fetching all contacts and orders/quotations for analysis sheet...");
+      const [allContacts, { confirmedOrders, quotations }] = await Promise.all([
+        fetchAllContactsPaginated(),
+        fetchSalesOrdersAboveThreshold(1000),
+      ]);
+
+      console.log(`[SYNC] Fetched ${allContacts.length} contacts, ${confirmedOrders.length} confirmed orders, ${quotations.length} quotations`);
+
+      // Create or get analysis sheet
+      analysisSheetUrl = await createOrGetAnalysisSheet();
+      console.log(`[SYNC] Analysis sheet: ${analysisSheetUrl}`);
+
+      // Write data to sheets
+      if (allContacts.length > 0) {
+        await writeContactsToAnalysisSheet(allContacts);
+        console.log("[SYNC] Written contacts to sheet");
+      }
+      if (confirmedOrders.length > 0) {
+        await writeSalesOrdersToAnalysisSheet(confirmedOrders);
+        console.log("[SYNC] Written confirmed orders to sheet");
+      }
+      if (quotations.length > 0) {
+        await writeQuotationsToAnalysisSheet(quotations);
+        console.log("[SYNC] Written quotations to sheet");
+      }
+    } catch (err) {
+      console.error("[SYNC] Analysis sheet export failed:", err);
+    }
+  }
+
   const context = await fetchOdooContext();
   const candidates = buildCandidates(context);
 
@@ -312,7 +354,14 @@ export async function runSync() {
     }
   }
 
-  return { candidates: candidates.length, ...tally, retired: deletedCount, sheetUrl, ranAt: new Date().toISOString() };
+  return {
+    candidates: candidates.length,
+    ...tally,
+    retired: deletedCount,
+    sheetUrl,
+    analysisSheetUrl,
+    ranAt: new Date().toISOString(),
+  };
 }
 
 const CHANNEL_BY_TYPE: Record<TaskType, "call" | "email"> = {
