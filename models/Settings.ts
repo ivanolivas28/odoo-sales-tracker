@@ -6,6 +6,9 @@ const settingsSchema = new Schema(
     googleRefreshToken: { type: String },
     spreadsheetId: { type: String },
     analysisSheetId: { type: String },
+    contactsSheetId: { type: String },
+    ordersSheetId: { type: String },
+    quotationsSheetId: { type: String },
   },
   { timestamps: true }
 );

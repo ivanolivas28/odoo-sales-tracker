@@ -12,7 +12,6 @@ import { generateOutreachCopy } from "@/lib/anthropic";
 import {
   isGoogleConnected,
   syncLeadsSheet,
-  createOrGetAnalysisSheet,
   writeContactsToAnalysisSheet,
   writeSalesOrdersToAnalysisSheet,
   writeQuotationsToAnalysisSheet,
@@ -306,11 +305,15 @@ async function upsertTask(candidate: TaskCandidate): Promise<"created" | "update
 export async function runSync() {
   await connectMongo();
 
-  // Sync analysis data to Google Sheets (all contacts, orders, quotations)
-  let analysisSheetUrl: string | undefined;
+  // Sync analysis data to Google Sheets: one spreadsheet per dataset so the
+  // Claude Cowork Drive connector (which only reads a file's first tab) can
+  // access all of them.
+  let contactsSheetUrl: string | undefined;
+  let ordersSheetUrl: string | undefined;
+  let quotationsSheetUrl: string | undefined;
   if (await isGoogleConnected()) {
     try {
-      console.log("[SYNC] Fetching all contacts and orders/quotations for analysis sheet...");
+      console.log("[SYNC] Fetching all contacts and orders/quotations for analysis sheets...");
       const [allContacts, { confirmedOrders, quotations, dateFields }] = await Promise.all([
         fetchAllContactsPaginated(),
         fetchSalesOrdersAboveThreshold(1000),
@@ -323,25 +326,16 @@ export async function runSync() {
       const productCodes =
         orderIds.length > 0 ? buildProductCodesByOrder(await fetchOrderLines(orderIds)) : new Map<number, string>();
 
-      // Create or get analysis sheet
-      analysisSheetUrl = await createOrGetAnalysisSheet();
-      console.log(`[SYNC] Analysis sheet: ${analysisSheetUrl}`);
+      contactsSheetUrl = await writeContactsToAnalysisSheet(allContacts);
+      console.log(`[SYNC] Contacts sheet: ${contactsSheetUrl}`);
 
-      // Write data to sheets
-      if (allContacts.length > 0) {
-        await writeContactsToAnalysisSheet(allContacts);
-        console.log("[SYNC] Written contacts to sheet");
-      }
-      if (confirmedOrders.length > 0) {
-        await writeSalesOrdersToAnalysisSheet(confirmedOrders, dateFields, productCodes);
-        console.log("[SYNC] Written confirmed orders to sheet");
-      }
-      if (quotations.length > 0) {
-        await writeQuotationsToAnalysisSheet(quotations, dateFields, productCodes);
-        console.log("[SYNC] Written quotations to sheet");
-      }
+      ordersSheetUrl = await writeSalesOrdersToAnalysisSheet(confirmedOrders, dateFields, productCodes);
+      console.log(`[SYNC] Orders sheet: ${ordersSheetUrl}`);
+
+      quotationsSheetUrl = await writeQuotationsToAnalysisSheet(quotations, dateFields, productCodes);
+      console.log(`[SYNC] Quotations sheet: ${quotationsSheetUrl}`);
     } catch (err) {
-      console.error("[SYNC] Analysis sheet export failed:", err);
+      console.error("[SYNC] Analysis sheets export failed:", err);
     }
   }
 
@@ -376,7 +370,9 @@ export async function runSync() {
     ...tally,
     retired: deletedCount,
     sheetUrl,
-    analysisSheetUrl,
+    contactsSheetUrl,
+    ordersSheetUrl,
+    quotationsSheetUrl,
     ranAt: new Date().toISOString(),
   };
 }

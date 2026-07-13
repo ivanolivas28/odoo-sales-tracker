@@ -22,7 +22,9 @@ export default function TasksPage() {
   const [googleStatus, setGoogleStatus] = useState<{
     connected: boolean;
     spreadsheetUrl?: string;
-    analysisSheetUrl?: string;
+    contactsSheetUrl?: string;
+    ordersSheetUrl?: string;
+    quotationsSheetUrl?: string;
   } | null>(null);
 
   const loadGoogleStatus = useCallback(() => {
@@ -131,32 +133,32 @@ export default function TasksPage() {
           </div>
           <div className="flex shrink-0 items-center gap-2">
             {googleStatus?.connected ? (
-              googleStatus.spreadsheetUrl || googleStatus.analysisSheetUrl ? (
-                <>
-                  {googleStatus.analysisSheetUrl && (
-                    <a
-                      href={googleStatus.analysisSheetUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="rounded-full border border-[var(--border-hairline)] px-4 py-1.5 text-sm font-medium text-[var(--ink-primary)] hover:bg-[var(--grid-line)]"
-                    >
-                      Open analysis sheet
-                    </a>
-                  )}
-                  {googleStatus.spreadsheetUrl && (
-                    <a
-                      href={googleStatus.spreadsheetUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="rounded-full border border-[var(--border-hairline)] px-4 py-1.5 text-sm font-medium text-[var(--ink-primary)] hover:bg-[var(--grid-line)]"
-                    >
-                      Open leads sheet
-                    </a>
-                  )}
-                </>
-              ) : (
-                <span className="text-xs text-[var(--ink-muted)]">Google connected — sheet appears after next sync</span>
-              )
+              (() => {
+                const sheetLinks = [
+                  { url: googleStatus.contactsSheetUrl, label: "Contactos" },
+                  { url: googleStatus.ordersSheetUrl, label: "Órdenes" },
+                  { url: googleStatus.quotationsSheetUrl, label: "Cotizaciones" },
+                  { url: googleStatus.spreadsheetUrl, label: "Leads" },
+                ].filter((l): l is { url: string; label: string } => !!l.url);
+
+                return sheetLinks.length > 0 ? (
+                  <>
+                    {sheetLinks.map((l) => (
+                      <a
+                        key={l.label}
+                        href={l.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="rounded-full border border-[var(--border-hairline)] px-4 py-1.5 text-sm font-medium text-[var(--ink-primary)] hover:bg-[var(--grid-line)]"
+                      >
+                        {l.label}
+                      </a>
+                    ))}
+                  </>
+                ) : (
+                  <span className="text-xs text-[var(--ink-muted)]">Google connected — sheets appear after next sync</span>
+                );
+              })()
             ) : (
               <a
                 href="/api/google/connect"

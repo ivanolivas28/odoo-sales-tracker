@@ -43,21 +43,25 @@ export async function isGoogleConnected(): Promise<boolean> {
   return !!settings?.googleRefreshToken;
 }
 
+function sheetUrl(id?: string): string | undefined {
+  return id ? `https://docs.google.com/spreadsheets/d/${id}/edit` : undefined;
+}
+
 export async function getGoogleStatus(): Promise<{
   connected: boolean;
   spreadsheetUrl?: string;
-  analysisSheetUrl?: string;
+  contactsSheetUrl?: string;
+  ordersSheetUrl?: string;
+  quotationsSheetUrl?: string;
 }> {
   await connectMongo();
   const settings = await Settings.findOne({ key: "google" });
   return {
     connected: !!settings?.googleRefreshToken,
-    spreadsheetUrl: settings?.spreadsheetId
-      ? `https://docs.google.com/spreadsheets/d/${settings.spreadsheetId}/edit`
-      : undefined,
-    analysisSheetUrl: settings?.analysisSheetId
-      ? `https://docs.google.com/spreadsheets/d/${settings.analysisSheetId}/edit`
-      : undefined,
+    spreadsheetUrl: sheetUrl(settings?.spreadsheetId),
+    contactsSheetUrl: sheetUrl(settings?.contactsSheetId),
+    ordersSheetUrl: sheetUrl(settings?.ordersSheetId),
+    quotationsSheetUrl: sheetUrl(settings?.quotationsSheetId),
   };
 }
 
@@ -114,68 +118,67 @@ export async function syncLeadsSheet(rows: string[][]): Promise<string> {
 
 import type { OdooContact, OdooSalesOrder, OdooDateField, OdooOrderLine } from "@/lib/odoo";
 
-const ANALYSIS_TABS = ["Contactos", "Órdenes", "Cotizaciones", "Instrucciones"];
+// Claude Cowork's Drive connector only reads the first tab of a spreadsheet,
+// so each dataset lives in its own file instead of tabs of a single one.
+type AnalysisSheetField = "contactsSheetId" | "ordersSheetId" | "quotationsSheetId";
 
-/** Create or get analysis spreadsheet with contacts, orders, and quotations */
-export async function createOrGetAnalysisSheet(): Promise<string> {
+const ANALYSIS_FILES: Record<AnalysisSheetField, string> = {
+  contactsSheetId: "Odoo - Contactos",
+  ordersSheetId: "Odoo - Órdenes",
+  quotationsSheetId: "Odoo - Cotizaciones",
+};
+
+/** Get the stored spreadsheet for a dataset, recreating it if it was deleted from Drive. */
+async function ensureAnalysisFile(field: AnalysisSheetField): Promise<string> {
   const auth = await getAuthedClient();
   const sheets = google.sheets({ version: "v4", auth });
 
   await connectMongo();
   const settings = await Settings.findOne({ key: "google" });
-  let analysisSheetId = settings?.analysisSheetId;
-  let needsCreation = !analysisSheetId;
+  let spreadsheetId: string | undefined = settings?.[field];
 
-  if (analysisSheetId) {
+  if (spreadsheetId) {
     try {
-      const meta = await sheets.spreadsheets.get({ spreadsheetId: analysisSheetId });
-
-      // Add any tab that's missing (e.g. "Productos" added after the sheet was created).
-      const existingTabs = new Set((meta.data.sheets ?? []).map((s) => s.properties?.title));
-      const missingTabs = ANALYSIS_TABS.filter((t) => !existingTabs.has(t));
-      if (missingTabs.length > 0) {
-        await sheets.spreadsheets.batchUpdate({
-          spreadsheetId: analysisSheetId,
-          requestBody: {
-            requests: missingTabs.map((title) => ({ addSheet: { properties: { title } } })),
-          },
-        });
-      }
-    } catch (err) {
-      console.log("[SYNC] Analysis sheet not found in Google Drive, creating new one");
-      needsCreation = true;
-      analysisSheetId = undefined;
+      await sheets.spreadsheets.get({ spreadsheetId });
+    } catch {
+      spreadsheetId = undefined;
     }
   }
 
-  if (needsCreation) {
+  if (!spreadsheetId) {
     const created = await sheets.spreadsheets.create({
-      requestBody: {
-        properties: {
-          title: "Odoo Sales Tracker - Analysis",
-        },
-        sheets: ANALYSIS_TABS.map((title) => ({ properties: { title } })),
-      },
+      requestBody: { properties: { title: ANALYSIS_FILES[field] } },
     });
-    analysisSheetId = created.data.spreadsheetId ?? undefined;
-    if (!analysisSheetId) throw new Error("Google did not return a spreadsheet id");
-    await Settings.findOneAndUpdate({ key: "google" }, { analysisSheetId });
+    spreadsheetId = created.data.spreadsheetId ?? undefined;
+    if (!spreadsheetId) throw new Error("Google did not return a spreadsheet id");
+    await Settings.findOneAndUpdate({ key: "google" }, { [field]: spreadsheetId });
+    console.log(`[SYNC] Created spreadsheet "${ANALYSIS_FILES[field]}"`);
   }
 
-  return `https://docs.google.com/spreadsheets/d/${analysisSheetId}/edit`;
+  return spreadsheetId;
 }
 
-/** Write contacts to analysis sheet */
-export async function writeContactsToAnalysisSheet(contacts: OdooContact[]): Promise<void> {
-  if (!contacts || contacts.length === 0) return;
-
+/** Overwrite the first tab of the dataset's spreadsheet with the given rows. */
+async function writeAnalysisFile(field: AnalysisSheetField, values: string[][]): Promise<string> {
+  const spreadsheetId = await ensureAnalysisFile(field);
   const auth = await getAuthedClient();
   const sheets = google.sheets({ version: "v4", auth });
 
-  await connectMongo();
-  const settings = await Settings.findOne({ key: "google" });
-  const analysisSheetId = settings?.analysisSheetId;
-  if (!analysisSheetId) throw new Error("Analysis sheet not found");
+  // Ranges without a tab prefix target the first (and only) tab.
+  await sheets.spreadsheets.values.clear({ spreadsheetId, range: "A1:ZZ100000" });
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: "A1",
+    valueInputOption: "RAW",
+    requestBody: { values },
+  });
+
+  return `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`;
+}
+
+/** Write contacts to their own spreadsheet */
+export async function writeContactsToAnalysisSheet(contacts: OdooContact[]): Promise<string | undefined> {
+  if (!contacts || contacts.length === 0) return undefined;
 
   const headers = [
     "ID",
@@ -203,17 +206,7 @@ export async function writeContactsToAnalysisSheet(contacts: OdooContact[]): Pro
     formatOdooDatetime(c.create_date),
   ]);
 
-  await sheets.spreadsheets.values.clear({
-    spreadsheetId: analysisSheetId,
-    range: "Contactos!A1:Z50000",
-  });
-
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: analysisSheetId,
-    range: "Contactos!A1",
-    valueInputOption: "RAW",
-    requestBody: { values: [headers, ...rows] },
-  });
+  return writeAnalysisFile("contactsSheetId", [headers, ...rows]);
 }
 
 // Odoo stores datetimes in UTC; its own exports convert them to the user's
@@ -300,38 +293,18 @@ function saleOrderRow(
   ];
 }
 
-/** Write sales orders to analysis sheet */
+/** Write sales orders to their own spreadsheet */
 export async function writeSalesOrdersToAnalysisSheet(
   orders: OdooSalesOrder[],
   dateFields: OdooDateField[] = [],
   productCodes: Map<number, string> = new Map()
-): Promise<void> {
-  if (!orders || orders.length === 0) return;
+): Promise<string | undefined> {
+  if (!orders || orders.length === 0) return undefined;
 
-  const auth = await getAuthedClient();
-  const sheets = google.sheets({ version: "v4", auth });
-
-  await connectMongo();
-  const settings = await Settings.findOne({ key: "google" });
-  const analysisSheetId = settings?.analysisSheetId;
-  if (!analysisSheetId) throw new Error("Analysis sheet not found");
-
-  await sheets.spreadsheets.values.clear({
-    spreadsheetId: analysisSheetId,
-    range: "Órdenes!A1:Z50000",
-  });
-
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: analysisSheetId,
-    range: "Órdenes!A1",
-    valueInputOption: "RAW",
-    requestBody: {
-      values: [
-        saleOrderHeaders(dateFields),
-        ...orders.map((o) => saleOrderRow(o, dateFields, productCodes)),
-      ],
-    },
-  });
+  return writeAnalysisFile("ordersSheetId", [
+    saleOrderHeaders(dateFields),
+    ...orders.map((o) => saleOrderRow(o, dateFields, productCodes)),
+  ]);
 }
 
 /**
@@ -359,36 +332,16 @@ export function buildProductCodesByOrder(lines: OdooOrderLine[]): Map<number, st
   return new Map([...codesByOrder].map(([id, codes]) => [id, codes.join(", ")]));
 }
 
-/** Write quotations to analysis sheet */
+/** Write quotations to their own spreadsheet */
 export async function writeQuotationsToAnalysisSheet(
   quotations: OdooSalesOrder[],
   dateFields: OdooDateField[] = [],
   productCodes: Map<number, string> = new Map()
-): Promise<void> {
-  if (!quotations || quotations.length === 0) return;
+): Promise<string | undefined> {
+  if (!quotations || quotations.length === 0) return undefined;
 
-  const auth = await getAuthedClient();
-  const sheets = google.sheets({ version: "v4", auth });
-
-  await connectMongo();
-  const settings = await Settings.findOne({ key: "google" });
-  const analysisSheetId = settings?.analysisSheetId;
-  if (!analysisSheetId) throw new Error("Analysis sheet not found");
-
-  await sheets.spreadsheets.values.clear({
-    spreadsheetId: analysisSheetId,
-    range: "Cotizaciones!A1:Z50000",
-  });
-
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: analysisSheetId,
-    range: "Cotizaciones!A1",
-    valueInputOption: "RAW",
-    requestBody: {
-      values: [
-        saleOrderHeaders(dateFields),
-        ...quotations.map((q) => saleOrderRow(q, dateFields, productCodes)),
-      ],
-    },
-  });
+  return writeAnalysisFile("quotationsSheetId", [
+    saleOrderHeaders(dateFields),
+    ...quotations.map((q) => saleOrderRow(q, dateFields, productCodes)),
+  ]);
 }
