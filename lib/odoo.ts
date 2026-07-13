@@ -91,8 +91,6 @@ export interface OdooSalesOrder {
   partner_id: [number, string];
   date_order: string;
   amount_total: number;
-  amount_untaxed: number;
-  currency_id?: [number, string];
   state: string;
   create_date: string;
   write_date: string;
@@ -160,8 +158,6 @@ export async function fetchSalesOrdersAboveThreshold(
           "partner_id",
           "date_order",
           "amount_total",
-          "amount_untaxed",
-          "currency_id",
           "state",
           "create_date",
           "write_date",
@@ -179,8 +175,6 @@ export async function fetchSalesOrdersAboveThreshold(
           "partner_id",
           "date_order",
           "amount_total",
-          "amount_untaxed",
-          "currency_id",
           "state",
           "create_date",
           "write_date",
