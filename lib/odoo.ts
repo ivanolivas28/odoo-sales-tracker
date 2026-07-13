@@ -97,6 +97,9 @@ export interface OdooSalesOrder {
   validity_date?: string;
   create_date: string;
   write_date: string;
+  user_id?: [number, string];
+  company_id?: [number, string];
+  invoice_status?: string;
 }
 
 /** Fetch ALL contacts from the Contacts module (type = contact) */
@@ -167,6 +170,9 @@ export async function fetchSalesOrdersAboveThreshold(
           "validity_date",
           "create_date",
           "write_date",
+          "user_id",
+          "company_id",
+          "invoice_status",
         ],
         order: "date_order DESC",
         limit: 10000,
@@ -187,6 +193,9 @@ export async function fetchSalesOrdersAboveThreshold(
           "validity_date",
           "create_date",
           "write_date",
+          "user_id",
+          "company_id",
+          "invoice_status",
         ],
         order: "write_date DESC",
         limit: 10000,
