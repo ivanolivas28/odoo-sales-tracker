@@ -132,8 +132,19 @@ export async function createOrGetAnalysisSheet(): Promise<string> {
   await connectMongo();
   const settings = await Settings.findOne({ key: "google" });
   let analysisSheetId = settings?.analysisSheetId;
+  let needsCreation = !analysisSheetId;
 
-  if (!analysisSheetId) {
+  if (analysisSheetId) {
+    try {
+      await sheets.spreadsheets.get({ spreadsheetId: analysisSheetId });
+    } catch (err) {
+      console.log("[SYNC] Analysis sheet not found in Google Drive, creating new one");
+      needsCreation = true;
+      analysisSheetId = undefined;
+    }
+  }
+
+  if (needsCreation) {
     const created = await sheets.spreadsheets.create({
       requestBody: {
         properties: {
