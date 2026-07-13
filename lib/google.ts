@@ -242,7 +242,6 @@ export async function writeSalesOrdersToAnalysisSheet(orders: OdooSalesOrder[]):
     "Monto Total",
     "Moneda",
     "Estado",
-    "Estado de Factura",
     "Días desde creación",
   ];
 
@@ -262,14 +261,13 @@ export async function writeSalesOrdersToAnalysisSheet(orders: OdooSalesOrder[]):
       String(o.amount_total || 0),
       o.currency_id ? (Array.isArray(o.currency_id) ? o.currency_id[1] : "USD") : "MXN",
       o.state || "",
-      o.invoice_status || "",
       String(daysSinceCreation),
     ];
   });
 
   await sheets.spreadsheets.values.clear({
     spreadsheetId: analysisSheetId,
-    range: "Órdenes!A1:L10000",
+    range: "Órdenes!A1:K10000",
   });
 
   await sheets.spreadsheets.values.update({
@@ -303,7 +301,6 @@ export async function writeQuotationsToAnalysisSheet(quotations: OdooSalesOrder[
     "Monto Total",
     "Moneda",
     "Estado",
-    "Estado de Factura",
     "Días pendiente",
   ];
 
@@ -323,14 +320,13 @@ export async function writeQuotationsToAnalysisSheet(quotations: OdooSalesOrder[
       String(q.amount_total || 0),
       q.currency_id ? (Array.isArray(q.currency_id) ? q.currency_id[1] : "USD") : "MXN",
       q.state || "",
-      q.invoice_status || "",
       String(daysPending),
     ];
   });
 
   await sheets.spreadsheets.values.clear({
     spreadsheetId: analysisSheetId,
-    range: "Cotizaciones!A1:L10000",
+    range: "Cotizaciones!A1:K10000",
   });
 
   await sheets.spreadsheets.values.update({
