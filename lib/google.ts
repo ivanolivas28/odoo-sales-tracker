@@ -43,13 +43,20 @@ export async function isGoogleConnected(): Promise<boolean> {
   return !!settings?.googleRefreshToken;
 }
 
-export async function getGoogleStatus(): Promise<{ connected: boolean; spreadsheetUrl?: string }> {
+export async function getGoogleStatus(): Promise<{
+  connected: boolean;
+  spreadsheetUrl?: string;
+  analysisSheetUrl?: string;
+}> {
   await connectMongo();
   const settings = await Settings.findOne({ key: "google" });
   return {
     connected: !!settings?.googleRefreshToken,
     spreadsheetUrl: settings?.spreadsheetId
       ? `https://docs.google.com/spreadsheets/d/${settings.spreadsheetId}/edit`
+      : undefined,
+    analysisSheetUrl: settings?.analysisSheetId
+      ? `https://docs.google.com/spreadsheets/d/${settings.analysisSheetId}/edit`
       : undefined,
   };
 }

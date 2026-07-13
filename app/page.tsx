@@ -19,7 +19,11 @@ export default function TasksPage() {
   const [completingId, setCompletingId] = useState<string | null>(null);
   const [filter, setFilter] = useState<TaskItem["type"] | "all">("all");
   const [results, setResults] = useState<Record<string, GeneratedContent>>({});
-  const [googleStatus, setGoogleStatus] = useState<{ connected: boolean; spreadsheetUrl?: string } | null>(null);
+  const [googleStatus, setGoogleStatus] = useState<{
+    connected: boolean;
+    spreadsheetUrl?: string;
+    analysisSheetUrl?: string;
+  } | null>(null);
 
   const loadGoogleStatus = useCallback(() => {
     return fetch("/api/google/status")
@@ -127,15 +131,29 @@ export default function TasksPage() {
           </div>
           <div className="flex shrink-0 items-center gap-2">
             {googleStatus?.connected ? (
-              googleStatus.spreadsheetUrl ? (
-                <a
-                  href={googleStatus.spreadsheetUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="rounded-full border border-[var(--border-hairline)] px-4 py-1.5 text-sm font-medium text-[var(--ink-primary)] hover:bg-[var(--grid-line)]"
-                >
-                  Open leads sheet
-                </a>
+              googleStatus.spreadsheetUrl || googleStatus.analysisSheetUrl ? (
+                <>
+                  {googleStatus.analysisSheetUrl && (
+                    <a
+                      href={googleStatus.analysisSheetUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="rounded-full border border-[var(--border-hairline)] px-4 py-1.5 text-sm font-medium text-[var(--ink-primary)] hover:bg-[var(--grid-line)]"
+                    >
+                      Open analysis sheet
+                    </a>
+                  )}
+                  {googleStatus.spreadsheetUrl && (
+                    <a
+                      href={googleStatus.spreadsheetUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="rounded-full border border-[var(--border-hairline)] px-4 py-1.5 text-sm font-medium text-[var(--ink-primary)] hover:bg-[var(--grid-line)]"
+                    >
+                      Open leads sheet
+                    </a>
+                  )}
+                </>
               ) : (
                 <span className="text-xs text-[var(--ink-muted)]">Google connected — sheet appears after next sync</span>
               )
