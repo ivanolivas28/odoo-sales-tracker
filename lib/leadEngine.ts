@@ -11,6 +11,7 @@ import {
   writeContactsToAnalysisSheet,
   writeSalesOrdersToAnalysisSheet,
   writeQuotationsToAnalysisSheet,
+  formatOdooDatetime,
 } from "@/lib/google";
 
 const URGENT_VIP_DAYS = 60;
@@ -61,6 +62,8 @@ interface TaskCandidate {
   refId?: number;
   reason: string;
   amount?: number;
+  /** Odoo datetime of the underlying record (quotation, lead, or last order). */
+  sourceDate?: string;
 }
 
 function daysSince(dateStr: string): number {
@@ -161,6 +164,7 @@ function buildCandidates(context: Awaited<ReturnType<typeof fetchOdooContext>>):
         partnerName: info.name,
         reason: `VIP client — ${idle} days since last purchase (lifetime ${formatCurrency(info.total)})`,
         amount: info.total,
+        sourceDate: info.lastOrder,
       });
     } else if (idle >= REACTIVATION_DAYS) {
       candidates.push({
@@ -170,6 +174,7 @@ function buildCandidates(context: Awaited<ReturnType<typeof fetchOdooContext>>):
         partnerName: info.name,
         reason: `Dormant client — ${idle} days (${Math.round(idle / 30)} months) since last purchase`,
         amount: info.total,
+        sourceDate: info.lastOrder,
       });
     }
   }
@@ -188,6 +193,7 @@ function buildCandidates(context: Awaited<ReturnType<typeof fetchOdooContext>>):
       refId: quote.id,
       reason: `Quotation ${quote.name} (${formatCurrency(quote.amount_total)}) sent ${idle} days ago — no response yet`,
       amount: quote.amount_total,
+      sourceDate: quote.date_order,
     });
   }
 
@@ -202,6 +208,7 @@ function buildCandidates(context: Awaited<ReturnType<typeof fetchOdooContext>>):
       refModel: "crm.lead",
       refId: lead.id,
       reason: `New lead "${lead.name}" — not yet contacted`,
+      sourceDate: lead.create_date,
     });
   }
 
@@ -244,7 +251,6 @@ async function buildLeadsRows(candidates: TaskCandidate[]): Promise<string[][]> 
 
   const partnerById = new Map(partners.map((p) => [p.id, p]));
   const leadById = new Map(leads.map((l) => [l.id, l]));
-  const today = new Date().toISOString().slice(0, 10);
 
   return [...candidates]
     .sort((a, b) => TASK_PRIORITY[a.type] - TASK_PRIORITY[b.type])
@@ -267,7 +273,7 @@ async function buildLeadsRows(candidates: TaskCandidate[]): Promise<string[][]> 
         phone,
         c.reason,
         c.amount !== undefined ? String(Math.round(c.amount)) : "",
-        today,
+        formatOdooDatetime(c.sourceDate),
       ];
     });
 }
@@ -299,7 +305,7 @@ export async function runSync() {
   if (await isGoogleConnected()) {
     try {
       console.log("[SYNC] Fetching all contacts and orders/quotations for analysis sheet...");
-      const [allContacts, { confirmedOrders, quotations }] = await Promise.all([
+      const [allContacts, { confirmedOrders, quotations, dateFields }] = await Promise.all([
         fetchAllContactsPaginated(),
         fetchSalesOrdersAboveThreshold(1000),
       ]);
@@ -316,11 +322,11 @@ export async function runSync() {
         console.log("[SYNC] Written contacts to sheet");
       }
       if (confirmedOrders.length > 0) {
-        await writeSalesOrdersToAnalysisSheet(confirmedOrders);
+        await writeSalesOrdersToAnalysisSheet(confirmedOrders, dateFields);
         console.log("[SYNC] Written confirmed orders to sheet");
       }
       if (quotations.length > 0) {
-        await writeQuotationsToAnalysisSheet(quotations);
+        await writeQuotationsToAnalysisSheet(quotations, dateFields);
         console.log("[SYNC] Written quotations to sheet");
       }
     } catch (err) {

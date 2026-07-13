@@ -97,6 +97,8 @@ export interface OdooSalesOrder {
   user_id?: [number, string] | false;
   company_id?: [number, string] | false;
   invoice_status?: string | false;
+  /** Dynamic date/datetime fields discovered via fields_get. */
+  [key: string]: unknown;
 }
 
 /** Fetch ALL contacts from the Contacts module (type = contact) */
@@ -146,19 +148,47 @@ export async function fetchAllContactsPaginated(): Promise<OdooContact[]> {
   return allContacts;
 }
 
+export interface OdooDateField {
+  name: string;
+  label: string;
+}
+
+/**
+ * Ask Odoo which date/datetime fields exist on sale.order (fields_get is the
+ * official model-introspection API), so the sheet can include every date the
+ * sales module tracks regardless of Odoo version or installed modules.
+ */
+export async function fetchSaleOrderDateFields(): Promise<OdooDateField[]> {
+  const fields = await executeKw<Record<string, { string?: string; type?: string }>>(
+    "sale.order",
+    "fields_get",
+    [],
+    { attributes: ["string", "type"] }
+  );
+
+  return Object.entries(fields)
+    .filter(
+      ([name, meta]) =>
+        name.toLowerCase().includes("date") && (meta.type === "date" || meta.type === "datetime")
+    )
+    .map(([name, meta]) => ({ name, label: meta.string || name }));
+}
+
 /** Fetch sales orders and quotations above USD 1000 threshold */
-export async function fetchSalesOrdersAboveThreshold(
-  minUSD = 1000
-): Promise<{ confirmedOrders: OdooSalesOrder[]; quotations: OdooSalesOrder[] }> {
+export async function fetchSalesOrdersAboveThreshold(minUSD = 1000): Promise<{
+  confirmedOrders: OdooSalesOrder[];
+  quotations: OdooSalesOrder[];
+  dateFields: OdooDateField[];
+}> {
   // For simplicity, we'll use minUSD directly as threshold
   // In production, you'd convert MXN to USD using currency rates from Odoo
 
-  const ORDER_FIELDS = [
+  const dateFields = await fetchSaleOrderDateFields();
+
+  const BASE_FIELDS = [
     "id",
     "name",
     "partner_id",
-    "date_order",
-    "create_date",
     "amount_total",
     "currency_id",
     "state",
@@ -166,6 +196,7 @@ export async function fetchSalesOrdersAboveThreshold(
     "company_id",
     "invoice_status",
   ];
+  const ORDER_FIELDS = [...new Set([...BASE_FIELDS, ...dateFields.map((f) => f.name)])];
 
   const [confirmedOrders, quotations] = await Promise.all([
     executeKw<OdooSalesOrder[]>(
@@ -185,5 +216,6 @@ export async function fetchSalesOrdersAboveThreshold(
   return {
     confirmedOrders: confirmedOrders || [],
     quotations: quotations || [],
+    dateFields,
   };
 }

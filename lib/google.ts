@@ -63,7 +63,7 @@ async function getAuthedClient() {
   return client;
 }
 
-const HEADER = ["Tipo", "Empresa / Contacto", "Correo", "WhatsApp", "Motivo", "Monto (MXN)", "Actualizado"];
+const HEADER = ["Tipo", "Empresa / Contacto", "Correo", "WhatsApp", "Motivo", "Monto (MXN)", "Fecha del registro en Odoo"];
 
 /** Creates the leads spreadsheet on first run, then overwrites its contents on every subsequent sync. */
 export async function syncLeadsSheet(rows: string[][]): Promise<string> {
@@ -105,7 +105,7 @@ export async function syncLeadsSheet(rows: string[][]): Promise<string> {
 
 // ========== Analysis Sheet Functions ==========
 
-import type { OdooContact, OdooSalesOrder } from "@/lib/odoo";
+import type { OdooContact, OdooSalesOrder, OdooDateField } from "@/lib/odoo";
 
 /** Create or get analysis spreadsheet with contacts, orders, and quotations */
 export async function createOrGetAnalysisSheet(): Promise<string> {
@@ -204,7 +204,7 @@ export async function writeContactsToAnalysisSheet(contacts: OdooContact[]): Pro
 // timezone. Do the same so the sheet matches what the user sees in Odoo.
 const ODOO_TIMEZONE = process.env.ODOO_TIMEZONE || "America/Mexico_City";
 
-function formatOdooDatetime(utcDatetime?: string | false): string {
+export function formatOdooDatetime(utcDatetime?: string | false): string {
   if (!utcDatetime) return "";
   const date = new Date(String(utcDatetime).replace(" ", "T") + "Z");
   if (isNaN(date.getTime())) return String(utcDatetime);
@@ -224,10 +224,9 @@ function formatOdooDatetime(utcDatetime?: string | false): string {
   return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}:${get("second")}`;
 }
 
-const SALE_ORDER_HEADERS = [
+const SALE_ORDER_BASE_HEADERS = [
   "ID",
   "Número",
-  "Fecha de creación",
   "Cliente",
   "Vendedor",
   "Empresa",
@@ -237,6 +236,11 @@ const SALE_ORDER_HEADERS = [
   "Estado de la factura",
   "Días desde creación",
 ];
+
+/** Base columns + one column per date field Odoo reports (fields_get). */
+function saleOrderHeaders(dateFields: OdooDateField[]): string[] {
+  return [...SALE_ORDER_BASE_HEADERS, ...dateFields.map((f) => f.label)];
+}
 
 const STATE_ES: Record<string, string> = {
   draft: "Cotización",
@@ -253,7 +257,7 @@ const INVOICE_STATUS_ES: Record<string, string> = {
   upselling: "Oportunidad de venta adicional",
 };
 
-function saleOrderRow(o: OdooSalesOrder): string[] {
+function saleOrderRow(o: OdooSalesOrder, dateFields: OdooDateField[]): string[] {
   const created = o.create_date ? new Date(o.create_date.replace(" ", "T") + "Z") : null;
   const daysSinceCreation = created
     ? Math.floor((Date.now() - created.getTime()) / (1000 * 60 * 60 * 24))
@@ -262,7 +266,6 @@ function saleOrderRow(o: OdooSalesOrder): string[] {
   return [
     String(o.id || ""),
     o.name || "",
-    formatOdooDatetime(o.create_date),
     Array.isArray(o.partner_id) ? o.partner_id[1] : "",
     Array.isArray(o.user_id) ? o.user_id[1] : "",
     Array.isArray(o.company_id) ? o.company_id[1] : "",
@@ -271,11 +274,15 @@ function saleOrderRow(o: OdooSalesOrder): string[] {
     STATE_ES[o.state] ?? o.state ?? "",
     o.invoice_status ? INVOICE_STATUS_ES[o.invoice_status] ?? o.invoice_status : "",
     String(daysSinceCreation),
+    ...dateFields.map((f) => formatOdooDatetime(o[f.name] as string | false | undefined)),
   ];
 }
 
 /** Write sales orders to analysis sheet */
-export async function writeSalesOrdersToAnalysisSheet(orders: OdooSalesOrder[]): Promise<void> {
+export async function writeSalesOrdersToAnalysisSheet(
+  orders: OdooSalesOrder[],
+  dateFields: OdooDateField[] = []
+): Promise<void> {
   if (!orders || orders.length === 0) return;
 
   const auth = await getAuthedClient();
@@ -295,12 +302,17 @@ export async function writeSalesOrdersToAnalysisSheet(orders: OdooSalesOrder[]):
     spreadsheetId: analysisSheetId,
     range: "Órdenes!A1",
     valueInputOption: "RAW",
-    requestBody: { values: [SALE_ORDER_HEADERS, ...orders.map(saleOrderRow)] },
+    requestBody: {
+      values: [saleOrderHeaders(dateFields), ...orders.map((o) => saleOrderRow(o, dateFields))],
+    },
   });
 }
 
 /** Write quotations to analysis sheet */
-export async function writeQuotationsToAnalysisSheet(quotations: OdooSalesOrder[]): Promise<void> {
+export async function writeQuotationsToAnalysisSheet(
+  quotations: OdooSalesOrder[],
+  dateFields: OdooDateField[] = []
+): Promise<void> {
   if (!quotations || quotations.length === 0) return;
 
   const auth = await getAuthedClient();
@@ -320,6 +332,8 @@ export async function writeQuotationsToAnalysisSheet(quotations: OdooSalesOrder[
     spreadsheetId: analysisSheetId,
     range: "Cotizaciones!A1",
     valueInputOption: "RAW",
-    requestBody: { values: [SALE_ORDER_HEADERS, ...quotations.map(saleOrderRow)] },
+    requestBody: {
+      values: [saleOrderHeaders(dateFields), ...quotations.map((q) => saleOrderRow(q, dateFields))],
+    },
   });
 }
