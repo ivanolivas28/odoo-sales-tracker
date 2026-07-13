@@ -207,7 +207,7 @@ export async function writeSalesOrdersToAnalysisSheet(orders: OdooSalesOrder[]):
   const analysisSheetId = settings?.analysisSheetId;
   if (!analysisSheetId) throw new Error("Analysis sheet not found");
 
-  const headers = ["ID", "Número", "Cliente", "Fecha", "Monto Total", "Moneda", "Estado", "Días desde creación"];
+  const headers = ["ID", "Número", "Cliente", "Fecha de creación", "Fecha de orden", "Monto Total", "Moneda", "Estado", "Días desde creación"];
 
   const now = new Date();
   const rows = orders.map((o) => {
@@ -218,6 +218,7 @@ export async function writeSalesOrdersToAnalysisSheet(orders: OdooSalesOrder[]):
       String(o.id || ""),
       o.name || "",
       Array.isArray(o.partner_id) ? o.partner_id[1] : String(o.partner_id),
+      o.create_date ? new Date(o.create_date).toLocaleDateString("es-MX") : "",
       o.date_order ? new Date(o.date_order).toLocaleDateString("es-MX") : "",
       String(o.amount_total || 0),
       o.currency_id ? (Array.isArray(o.currency_id) ? o.currency_id[1] : "USD") : "MXN",
@@ -228,7 +229,7 @@ export async function writeSalesOrdersToAnalysisSheet(orders: OdooSalesOrder[]):
 
   await sheets.spreadsheets.values.clear({
     spreadsheetId: analysisSheetId,
-    range: "Órdenes!A1:H10000",
+    range: "Órdenes!A1:I10000",
   });
 
   await sheets.spreadsheets.values.update({
@@ -251,7 +252,7 @@ export async function writeQuotationsToAnalysisSheet(quotations: OdooSalesOrder[
   const analysisSheetId = settings?.analysisSheetId;
   if (!analysisSheetId) throw new Error("Analysis sheet not found");
 
-  const headers = ["ID", "Número", "Cliente", "Fecha", "Monto Total", "Moneda", "Estado", "Días pendiente"];
+  const headers = ["ID", "Número", "Cliente", "Fecha de creación", "Fecha de orden", "Monto Total", "Moneda", "Estado", "Días pendiente"];
 
   const now = new Date();
   const rows = quotations.map((q) => {
@@ -262,6 +263,7 @@ export async function writeQuotationsToAnalysisSheet(quotations: OdooSalesOrder[
       String(q.id || ""),
       q.name || "",
       Array.isArray(q.partner_id) ? q.partner_id[1] : String(q.partner_id),
+      q.create_date ? new Date(q.create_date).toLocaleDateString("es-MX") : "",
       q.date_order ? new Date(q.date_order).toLocaleDateString("es-MX") : "",
       String(q.amount_total || 0),
       q.currency_id ? (Array.isArray(q.currency_id) ? q.currency_id[1] : "USD") : "MXN",
@@ -272,7 +274,7 @@ export async function writeQuotationsToAnalysisSheet(quotations: OdooSalesOrder[
 
   await sheets.spreadsheets.values.clear({
     spreadsheetId: analysisSheetId,
-    range: "Cotizaciones!A1:H10000",
+    range: "Cotizaciones!A1:I10000",
   });
 
   await sheets.spreadsheets.values.update({
