@@ -74,25 +74,56 @@ export async function executeKw<T>(
 export interface OdooContact {
   id: number;
   name: string;
+  email?: string | false;
+  phone?: string | false;
+  mobile?: string | false;
+  city?: string | false;
+  function?: string | false;
+  industry_id?: [number, string] | false;
+  customer_rank?: number;
+  supplier_rank?: number;
+  create_date?: string;
 }
 
 export interface OdooSalesOrder {
   id: number;
   name: string;
+  partner_id: [number, string] | false;
+  date_order: string;
+  create_date: string;
+  amount_total: number;
+  currency_id?: [number, string] | false;
   state: string;
+  user_id?: [number, string] | false;
+  company_id?: [number, string] | false;
+  invoice_status?: string | false;
 }
 
 /** Fetch ALL contacts from the Contacts module (type = contact) */
 export async function fetchAllContacts(limit = 500, offset = 0): Promise<OdooContact[]> {
-  return executeKw<OdooContact[]>("res.partner", "search_read", [
-    [["type", "=", "contact"]],
+  return executeKw<OdooContact[]>(
+    "res.partner",
+    "search_read",
+    [[["type", "=", "contact"]]],
     {
-      fields: ["id", "name"],
+      fields: [
+        "id",
+        "name",
+        "email",
+        "phone",
+        "mobile",
+        "city",
+        "function",
+        "industry_id",
+        "customer_rank",
+        "supplier_rank",
+        "create_date",
+      ],
       limit,
       offset,
-      order: "write_date DESC",
-    },
-  ]);
+      order: "create_date DESC",
+    }
+  );
 }
 
 /** Paginate through all contacts */
@@ -122,23 +153,33 @@ export async function fetchSalesOrdersAboveThreshold(
   // For simplicity, we'll use minUSD directly as threshold
   // In production, you'd convert MXN to USD using currency rates from Odoo
 
+  const ORDER_FIELDS = [
+    "id",
+    "name",
+    "partner_id",
+    "date_order",
+    "create_date",
+    "amount_total",
+    "currency_id",
+    "state",
+    "user_id",
+    "company_id",
+    "invoice_status",
+  ];
+
   const [confirmedOrders, quotations] = await Promise.all([
-    executeKw<OdooSalesOrder[]>("sale.order", "search_read", [
-      [["state", "in", ["sale", "done"]], ["amount_total", ">=", minUSD]],
-      {
-        fields: ["id", "name", "state"],
-        order: "date_order DESC",
-        limit: 10000,
-      },
-    ]),
-    executeKw<OdooSalesOrder[]>("sale.order", "search_read", [
-      [["state", "=", "draft"], ["amount_total", ">=", minUSD]],
-      {
-        fields: ["id", "name", "state"],
-        order: "write_date DESC",
-        limit: 10000,
-      },
-    ]),
+    executeKw<OdooSalesOrder[]>(
+      "sale.order",
+      "search_read",
+      [[["state", "in", ["sale", "done"]], ["amount_total", ">=", minUSD]]],
+      { fields: ORDER_FIELDS, order: "create_date DESC", limit: 10000 }
+    ),
+    executeKw<OdooSalesOrder[]>(
+      "sale.order",
+      "search_read",
+      [[["state", "in", ["draft", "sent"]], ["amount_total", ">=", minUSD]]],
+      { fields: ORDER_FIELDS, order: "create_date DESC", limit: 10000 }
+    ),
   ]);
 
   return {

@@ -74,6 +74,15 @@ export async function syncLeadsSheet(rows: string[][]): Promise<string> {
   const settings = await Settings.findOne({ key: "google" });
   let spreadsheetId = settings?.spreadsheetId;
 
+  // The stored ID may point to a sheet the user deleted from Drive.
+  if (spreadsheetId) {
+    try {
+      await sheets.spreadsheets.get({ spreadsheetId });
+    } catch {
+      spreadsheetId = undefined;
+    }
+  }
+
   if (!spreadsheetId) {
     const created = await sheets.spreadsheets.create({
       requestBody: { properties: { title: "Sales Tracker - Leads" } },
@@ -96,33 +105,7 @@ export async function syncLeadsSheet(rows: string[][]): Promise<string> {
 
 // ========== Analysis Sheet Functions ==========
 
-interface OdooContact {
-  id: number;
-  name: string;
-  email?: string;
-  phone?: string;
-  mobile?: string;
-  city?: string;
-  industry_id?: [number, string];
-  customer_rank?: number;
-  supplier_rank?: number;
-  create_date?: string;
-  write_date?: string;
-}
-
-interface OdooSalesOrder {
-  id: number;
-  name: string;
-  partner_id: [number, string];
-  date_order: string;
-  amount_total: number;
-  amount_untaxed: number;
-  currency_id?: [number, string];
-  state: string;
-  validity_date?: string;
-  create_date: string;
-  write_date: string;
-}
+import type { OdooContact, OdooSalesOrder } from "@/lib/odoo";
 
 /** Create or get analysis spreadsheet with contacts, orders, and quotations */
 export async function createOrGetAnalysisSheet(): Promise<string> {
@@ -178,13 +161,35 @@ export async function writeContactsToAnalysisSheet(contacts: OdooContact[]): Pro
   const analysisSheetId = settings?.analysisSheetId;
   if (!analysisSheetId) throw new Error("Analysis sheet not found");
 
-  const headers = ["ID", "Nombre"];
+  const headers = [
+    "ID",
+    "Nombre",
+    "Email",
+    "Teléfono",
+    "Móvil",
+    "Ciudad",
+    "Puesto",
+    "Industria",
+    "¿Es Cliente?",
+    "Fecha de Creación",
+  ];
 
-  const rows = contacts.map((c) => [String(c.id || ""), c.name || ""]);
+  const rows = contacts.map((c) => [
+    String(c.id || ""),
+    c.name || "",
+    c.email || "",
+    c.phone || "",
+    c.mobile || "",
+    c.city || "",
+    c.function || "",
+    Array.isArray(c.industry_id) ? c.industry_id[1] : "",
+    c.customer_rank && c.customer_rank > 0 ? "Sí" : "No",
+    c.create_date ? String(c.create_date).slice(0, 10) : "",
+  ]);
 
   await sheets.spreadsheets.values.clear({
     spreadsheetId: analysisSheetId,
-    range: "Contactos!A1:B10000",
+    range: "Contactos!A1:Z50000",
   });
 
   await sheets.spreadsheets.values.update({
@@ -193,6 +198,56 @@ export async function writeContactsToAnalysisSheet(contacts: OdooContact[]): Pro
     valueInputOption: "RAW",
     requestBody: { values: [headers, ...rows] },
   });
+}
+
+const SALE_ORDER_HEADERS = [
+  "ID",
+  "Número",
+  "Fecha de creación",
+  "Cliente",
+  "Vendedor",
+  "Empresa",
+  "Monto Total",
+  "Moneda",
+  "Estado",
+  "Estado de la factura",
+  "Días desde creación",
+];
+
+const STATE_ES: Record<string, string> = {
+  draft: "Cotización",
+  sent: "Cotización enviada",
+  sale: "Orden de venta",
+  done: "Bloqueada",
+  cancel: "Cancelada",
+};
+
+const INVOICE_STATUS_ES: Record<string, string> = {
+  "to invoice": "Por facturar",
+  invoiced: "Facturado",
+  no: "Nada que facturar",
+  upselling: "Oportunidad de venta adicional",
+};
+
+function saleOrderRow(o: OdooSalesOrder): string[] {
+  const created = o.create_date ? new Date(o.create_date.replace(" ", "T") + "Z") : null;
+  const daysSinceCreation = created
+    ? Math.floor((Date.now() - created.getTime()) / (1000 * 60 * 60 * 24))
+    : "";
+
+  return [
+    String(o.id || ""),
+    o.name || "",
+    o.create_date || "",
+    Array.isArray(o.partner_id) ? o.partner_id[1] : "",
+    Array.isArray(o.user_id) ? o.user_id[1] : "",
+    Array.isArray(o.company_id) ? o.company_id[1] : "",
+    String(o.amount_total ?? ""),
+    Array.isArray(o.currency_id) ? o.currency_id[1] : "",
+    STATE_ES[o.state] ?? o.state ?? "",
+    o.invoice_status ? INVOICE_STATUS_ES[o.invoice_status] ?? o.invoice_status : "",
+    String(daysSinceCreation),
+  ];
 }
 
 /** Write sales orders to analysis sheet */
@@ -207,20 +262,16 @@ export async function writeSalesOrdersToAnalysisSheet(orders: OdooSalesOrder[]):
   const analysisSheetId = settings?.analysisSheetId;
   if (!analysisSheetId) throw new Error("Analysis sheet not found");
 
-  const headers = ["ID", "Número", "Estado"];
-
-  const rows = orders.map((o) => [String(o.id || ""), o.name || "", o.state || ""]);
-
   await sheets.spreadsheets.values.clear({
     spreadsheetId: analysisSheetId,
-    range: "Órdenes!A1:C10000",
+    range: "Órdenes!A1:Z50000",
   });
 
   await sheets.spreadsheets.values.update({
     spreadsheetId: analysisSheetId,
     range: "Órdenes!A1",
     valueInputOption: "RAW",
-    requestBody: { values: [headers, ...rows] },
+    requestBody: { values: [SALE_ORDER_HEADERS, ...orders.map(saleOrderRow)] },
   });
 }
 
@@ -236,19 +287,15 @@ export async function writeQuotationsToAnalysisSheet(quotations: OdooSalesOrder[
   const analysisSheetId = settings?.analysisSheetId;
   if (!analysisSheetId) throw new Error("Analysis sheet not found");
 
-  const headers = ["ID", "Número", "Estado"];
-
-  const rows = quotations.map((q) => [String(q.id || ""), q.name || "", q.state || ""]);
-
   await sheets.spreadsheets.values.clear({
     spreadsheetId: analysisSheetId,
-    range: "Cotizaciones!A1:C10000",
+    range: "Cotizaciones!A1:Z50000",
   });
 
   await sheets.spreadsheets.values.update({
     spreadsheetId: analysisSheetId,
     range: "Cotizaciones!A1",
     valueInputOption: "RAW",
-    requestBody: { values: [headers, ...rows] },
+    requestBody: { values: [SALE_ORDER_HEADERS, ...quotations.map(saleOrderRow)] },
   });
 }
