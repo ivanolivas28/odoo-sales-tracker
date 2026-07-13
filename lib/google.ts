@@ -207,19 +207,13 @@ export async function writeSalesOrdersToAnalysisSheet(orders: OdooSalesOrder[]):
   const analysisSheetId = settings?.analysisSheetId;
   if (!analysisSheetId) throw new Error("Analysis sheet not found");
 
-  const headers = ["ID", "Número", "Cliente", "Monto Total", "Estado"];
+  const headers = ["ID", "Número", "Estado"];
 
-  const rows = orders.map((o) => [
-    String(o.id || ""),
-    o.name || "",
-    Array.isArray(o.partner_id) ? o.partner_id[1] : String(o.partner_id),
-    String(o.amount_total || 0),
-    o.state || "",
-  ]);
+  const rows = orders.map((o) => [String(o.id || ""), o.name || "", o.state || ""]);
 
   await sheets.spreadsheets.values.clear({
     spreadsheetId: analysisSheetId,
-    range: "Órdenes!A1:E10000",
+    range: "Órdenes!A1:C10000",
   });
 
   await sheets.spreadsheets.values.update({
@@ -242,19 +236,13 @@ export async function writeQuotationsToAnalysisSheet(quotations: OdooSalesOrder[
   const analysisSheetId = settings?.analysisSheetId;
   if (!analysisSheetId) throw new Error("Analysis sheet not found");
 
-  const headers = ["ID", "Número", "Cliente", "Monto Total", "Estado"];
+  const headers = ["ID", "Número", "Estado"];
 
-  const rows = quotations.map((q) => [
-    String(q.id || ""),
-    q.name || "",
-    Array.isArray(q.partner_id) ? q.partner_id[1] : String(q.partner_id),
-    String(q.amount_total || 0),
-    q.state || "",
-  ]);
+  const rows = quotations.map((q) => [String(q.id || ""), q.name || "", q.state || ""]);
 
   await sheets.spreadsheets.values.clear({
     spreadsheetId: analysisSheetId,
-    range: "Cotizaciones!A1:E10000",
+    range: "Cotizaciones!A1:C10000",
   });
 
   await sheets.spreadsheets.values.update({

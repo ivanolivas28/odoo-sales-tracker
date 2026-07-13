@@ -79,8 +79,6 @@ export interface OdooContact {
 export interface OdooSalesOrder {
   id: number;
   name: string;
-  partner_id: [number, string];
-  amount_total: number;
   state: string;
 }
 
@@ -128,7 +126,7 @@ export async function fetchSalesOrdersAboveThreshold(
     executeKw<OdooSalesOrder[]>("sale.order", "search_read", [
       [["state", "in", ["sale", "done"]], ["amount_total", ">=", minUSD]],
       {
-        fields: ["id", "name", "partner_id", "amount_total", "state"],
+        fields: ["id", "name", "state"],
         order: "date_order DESC",
         limit: 10000,
       },
@@ -136,7 +134,7 @@ export async function fetchSalesOrdersAboveThreshold(
     executeKw<OdooSalesOrder[]>("sale.order", "search_read", [
       [["state", "=", "draft"], ["amount_total", ">=", minUSD]],
       {
-        fields: ["id", "name", "partner_id", "amount_total", "state"],
+        fields: ["id", "name", "state"],
         order: "write_date DESC",
         limit: 10000,
       },
