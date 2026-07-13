@@ -148,6 +148,54 @@ export async function fetchAllContactsPaginated(): Promise<OdooContact[]> {
   return allContacts;
 }
 
+export interface OdooOrderLine {
+  id: number;
+  order_id: [number, string] | false;
+  product_id: [number, string] | false;
+  name: string;
+  product_uom_qty: number;
+  price_unit: number;
+  discount: number;
+  price_subtotal: number;
+  price_total: number;
+  /** 'line_section' | 'line_note' for section/note rows, false for real products. */
+  display_type: string | false;
+}
+
+/** Fetch the product lines of the given sale orders/quotations. */
+export async function fetchOrderLines(orderIds: number[]): Promise<OdooOrderLine[]> {
+  const all: OdooOrderLine[] = [];
+
+  // Chunk the ids so the domain stays a reasonable size.
+  for (let i = 0; i < orderIds.length; i += 500) {
+    const chunk = orderIds.slice(i, i + 500);
+    const lines = await executeKw<OdooOrderLine[]>(
+      "sale.order.line",
+      "search_read",
+      [[["order_id", "in", chunk]]],
+      {
+        fields: [
+          "id",
+          "order_id",
+          "product_id",
+          "name",
+          "product_uom_qty",
+          "price_unit",
+          "discount",
+          "price_subtotal",
+          "price_total",
+          "display_type",
+        ],
+        order: "order_id DESC, id ASC",
+        limit: 100000,
+      }
+    );
+    all.push(...lines);
+  }
+
+  return all;
+}
+
 export interface OdooDateField {
   name: string;
   label: string;

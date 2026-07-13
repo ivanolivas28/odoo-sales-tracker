@@ -112,7 +112,9 @@ export async function syncLeadsSheet(rows: string[][]): Promise<string> {
 
 // ========== Analysis Sheet Functions ==========
 
-import type { OdooContact, OdooSalesOrder, OdooDateField } from "@/lib/odoo";
+import type { OdooContact, OdooSalesOrder, OdooDateField, OdooOrderLine } from "@/lib/odoo";
+
+const ANALYSIS_TABS = ["Contactos", "Órdenes", "Cotizaciones", "Productos", "Instrucciones"];
 
 /** Create or get analysis spreadsheet with contacts, orders, and quotations */
 export async function createOrGetAnalysisSheet(): Promise<string> {
@@ -126,7 +128,19 @@ export async function createOrGetAnalysisSheet(): Promise<string> {
 
   if (analysisSheetId) {
     try {
-      await sheets.spreadsheets.get({ spreadsheetId: analysisSheetId });
+      const meta = await sheets.spreadsheets.get({ spreadsheetId: analysisSheetId });
+
+      // Add any tab that's missing (e.g. "Productos" added after the sheet was created).
+      const existingTabs = new Set((meta.data.sheets ?? []).map((s) => s.properties?.title));
+      const missingTabs = ANALYSIS_TABS.filter((t) => !existingTabs.has(t));
+      if (missingTabs.length > 0) {
+        await sheets.spreadsheets.batchUpdate({
+          spreadsheetId: analysisSheetId,
+          requestBody: {
+            requests: missingTabs.map((title) => ({ addSheet: { properties: { title } } })),
+          },
+        });
+      }
     } catch (err) {
       console.log("[SYNC] Analysis sheet not found in Google Drive, creating new one");
       needsCreation = true;
@@ -140,12 +154,7 @@ export async function createOrGetAnalysisSheet(): Promise<string> {
         properties: {
           title: "Odoo Sales Tracker - Analysis",
         },
-        sheets: [
-          { properties: { title: "Contactos" } },
-          { properties: { title: "Órdenes" } },
-          { properties: { title: "Cotizaciones" } },
-          { properties: { title: "Instrucciones" } },
-        ],
+        sheets: ANALYSIS_TABS.map((title) => ({ properties: { title } })),
       },
     });
     analysisSheetId = created.data.spreadsheetId ?? undefined;
@@ -312,6 +321,67 @@ export async function writeSalesOrdersToAnalysisSheet(
     requestBody: {
       values: [saleOrderHeaders(dateFields), ...orders.map((o) => saleOrderRow(o, dateFields))],
     },
+  });
+}
+
+/**
+ * Write the product lines of every synced order/quotation to the "Productos"
+ * tab. Section/note lines ("Sustituto de...") are skipped — only real
+ * products, with their code (e.g. M18-4VPDL-Q8) split into its own column.
+ */
+export async function writeProductsToAnalysisSheet(lines: OdooOrderLine[]): Promise<void> {
+  if (!lines || lines.length === 0) return;
+
+  const auth = await getAuthedClient();
+  const sheets = google.sheets({ version: "v4", auth });
+
+  await connectMongo();
+  const settings = await Settings.findOne({ key: "google" });
+  const analysisSheetId = settings?.analysisSheetId;
+  if (!analysisSheetId) throw new Error("Analysis sheet not found");
+
+  const headers = [
+    "Orden / Cotización",
+    "Código",
+    "Producto",
+    "Cantidad",
+    "Precio unitario",
+    "Descuento %",
+    "Subtotal",
+    "Total",
+  ];
+
+  const rows = lines
+    .filter((l) => !l.display_type && Array.isArray(l.product_id))
+    .map((l) => {
+      // Odoo's display name is "[CODE] Product name" when a code exists.
+      const display = Array.isArray(l.product_id) ? l.product_id[1] : "";
+      const match = display.match(/^\[(.+?)\]\s*(.*)$/);
+      const code = match ? match[1] : "";
+      const productName = match ? match[2] : display;
+
+      return [
+        Array.isArray(l.order_id) ? l.order_id[1] : "",
+        code,
+        productName,
+        String(l.product_uom_qty ?? ""),
+        String(l.price_unit ?? ""),
+        String(l.discount ?? 0),
+        String(l.price_subtotal ?? ""),
+        String(l.price_total ?? ""),
+      ];
+    });
+
+  await sheets.spreadsheets.values.clear({
+    spreadsheetId: analysisSheetId,
+    range: "Productos!A1:Z100000",
+  });
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: analysisSheetId,
+    range: "Productos!A1",
+    valueInputOption: "RAW",
+    requestBody: { values: [headers, ...rows] },
   });
 }
 

@@ -1,4 +1,9 @@
-import { executeKw, fetchAllContactsPaginated, fetchSalesOrdersAboveThreshold } from "@/lib/odoo";
+import {
+  executeKw,
+  fetchAllContactsPaginated,
+  fetchSalesOrdersAboveThreshold,
+  fetchOrderLines,
+} from "@/lib/odoo";
 import { connectMongo } from "@/lib/mongodb";
 import { Task, TASK_PRIORITY, type TaskType } from "@/models/Task";
 import { formatCurrency } from "@/lib/salesAggregates";
@@ -11,6 +16,7 @@ import {
   writeContactsToAnalysisSheet,
   writeSalesOrdersToAnalysisSheet,
   writeQuotationsToAnalysisSheet,
+  writeProductsToAnalysisSheet,
   formatOdooDatetime,
 } from "@/lib/google";
 
@@ -328,6 +334,13 @@ export async function runSync() {
       if (quotations.length > 0) {
         await writeQuotationsToAnalysisSheet(quotations, dateFields);
         console.log("[SYNC] Written quotations to sheet");
+      }
+
+      const orderIds = [...confirmedOrders, ...quotations].map((o) => o.id);
+      if (orderIds.length > 0) {
+        const lines = await fetchOrderLines(orderIds);
+        await writeProductsToAnalysisSheet(lines);
+        console.log(`[SYNC] Written ${lines.length} product lines to sheet`);
       }
     } catch (err) {
       console.error("[SYNC] Analysis sheet export failed:", err);
