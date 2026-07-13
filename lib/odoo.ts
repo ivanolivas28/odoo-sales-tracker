@@ -78,11 +78,7 @@ export interface OdooContact {
   phone?: string;
   mobile?: string;
   city?: string;
-  industry_id?: [number, string];
-  customer_rank?: number;
-  supplier_rank?: number;
   create_date?: string;
-  write_date?: string;
 }
 
 export interface OdooSalesOrder {
@@ -108,11 +104,7 @@ export async function fetchAllContacts(limit = 500, offset = 0): Promise<OdooCon
         "phone",
         "mobile",
         "city",
-        "industry_id",
-        "customer_rank",
-        "supplier_rank",
         "create_date",
-        "write_date",
       ],
       limit,
       offset,

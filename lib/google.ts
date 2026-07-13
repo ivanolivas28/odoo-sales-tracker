@@ -185,10 +185,6 @@ export async function writeContactsToAnalysisSheet(contacts: OdooContact[]): Pro
     "Teléfono",
     "Móvil",
     "Ciudad",
-    "Industria",
-    "Ranking Cliente",
-    "Ranking Proveedor",
-    "¿Es Cliente?",
     "Fecha de Creación",
   ];
 
@@ -199,16 +195,12 @@ export async function writeContactsToAnalysisSheet(contacts: OdooContact[]): Pro
     c.phone || "",
     c.mobile || "",
     c.city || "",
-    c.industry_id ? c.industry_id[1] : "",
-    c.customer_rank ? String(c.customer_rank) : "0",
-    c.supplier_rank ? String(c.supplier_rank) : "0",
-    c.customer_rank && c.customer_rank > 0 ? "Sí" : "No",
     c.create_date ? new Date(c.create_date).toLocaleDateString("es-MX") : "",
   ]);
 
   await sheets.spreadsheets.values.clear({
     spreadsheetId: analysisSheetId,
-    range: "Contactos!A1:K10000",
+    range: "Contactos!A1:G10000",
   });
 
   await sheets.spreadsheets.values.update({
