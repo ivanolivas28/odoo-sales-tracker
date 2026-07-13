@@ -114,7 +114,7 @@ export async function syncLeadsSheet(rows: string[][]): Promise<string> {
 
 import type { OdooContact, OdooSalesOrder, OdooDateField, OdooOrderLine } from "@/lib/odoo";
 
-const ANALYSIS_TABS = ["Contactos", "Órdenes", "Cotizaciones", "Productos", "Instrucciones"];
+const ANALYSIS_TABS = ["Contactos", "Órdenes", "Cotizaciones", "Instrucciones"];
 
 /** Create or get analysis spreadsheet with contacts, orders, and quotations */
 export async function createOrGetAnalysisSheet(): Promise<string> {
@@ -250,6 +250,7 @@ const SALE_ORDER_BASE_HEADERS = [
   "Moneda",
   "Estado",
   "Estado de la factura",
+  "Productos",
   "Días desde creación",
 ];
 
@@ -273,7 +274,11 @@ const INVOICE_STATUS_ES: Record<string, string> = {
   upselling: "Oportunidad de venta adicional",
 };
 
-function saleOrderRow(o: OdooSalesOrder, dateFields: OdooDateField[]): string[] {
+function saleOrderRow(
+  o: OdooSalesOrder,
+  dateFields: OdooDateField[],
+  productCodes: Map<number, string>
+): string[] {
   const created = o.create_date ? new Date(o.create_date.replace(" ", "T") + "Z") : null;
   const daysSinceCreation = created
     ? Math.floor((Date.now() - created.getTime()) / (1000 * 60 * 60 * 24))
@@ -289,6 +294,7 @@ function saleOrderRow(o: OdooSalesOrder, dateFields: OdooDateField[]): string[] 
     Array.isArray(o.currency_id) ? o.currency_id[1] : "",
     STATE_ES[o.state] ?? o.state ?? "",
     o.invoice_status ? INVOICE_STATUS_ES[o.invoice_status] ?? o.invoice_status : "",
+    productCodes.get(o.id) ?? "",
     String(daysSinceCreation),
     ...dateFields.map((f) => formatOdooDatetime(o[f.name] as string | false | undefined)),
   ];
@@ -297,7 +303,8 @@ function saleOrderRow(o: OdooSalesOrder, dateFields: OdooDateField[]): string[] 
 /** Write sales orders to analysis sheet */
 export async function writeSalesOrdersToAnalysisSheet(
   orders: OdooSalesOrder[],
-  dateFields: OdooDateField[] = []
+  dateFields: OdooDateField[] = [],
+  productCodes: Map<number, string> = new Map()
 ): Promise<void> {
   if (!orders || orders.length === 0) return;
 
@@ -319,76 +326,44 @@ export async function writeSalesOrdersToAnalysisSheet(
     range: "Órdenes!A1",
     valueInputOption: "RAW",
     requestBody: {
-      values: [saleOrderHeaders(dateFields), ...orders.map((o) => saleOrderRow(o, dateFields))],
+      values: [
+        saleOrderHeaders(dateFields),
+        ...orders.map((o) => saleOrderRow(o, dateFields, productCodes)),
+      ],
     },
   });
 }
 
 /**
- * Write the product lines of every synced order/quotation to the "Productos"
- * tab. Section/note lines ("Sustituto de...") are skipped — only real
- * products, with their code (e.g. M18-4VPDL-Q8) split into its own column.
+ * Build a map of order id → product codes concatenated with ", "
+ * (e.g. "M18-4VPDL-Q8, M18-3VPLV-Q8, BRT-2X2"). Section/note lines
+ * ("Sustituto de...") are skipped — only real products.
  */
-export async function writeProductsToAnalysisSheet(lines: OdooOrderLine[]): Promise<void> {
-  if (!lines || lines.length === 0) return;
+export function buildProductCodesByOrder(lines: OdooOrderLine[]): Map<number, string> {
+  const codesByOrder = new Map<number, string[]>();
 
-  const auth = await getAuthedClient();
-  const sheets = google.sheets({ version: "v4", auth });
+  for (const l of lines) {
+    if (l.display_type || !Array.isArray(l.product_id) || !Array.isArray(l.order_id)) continue;
 
-  await connectMongo();
-  const settings = await Settings.findOne({ key: "google" });
-  const analysisSheetId = settings?.analysisSheetId;
-  if (!analysisSheetId) throw new Error("Analysis sheet not found");
+    // Odoo's display name is "[CODE] Product name" when a code exists.
+    const display = l.product_id[1];
+    const match = display.match(/^\[(.+?)\]/);
+    const code = match ? match[1] : display;
 
-  const headers = [
-    "Orden / Cotización",
-    "Código",
-    "Producto",
-    "Cantidad",
-    "Precio unitario",
-    "Descuento %",
-    "Subtotal",
-    "Total",
-  ];
+    const orderId = l.order_id[0];
+    const codes = codesByOrder.get(orderId) ?? [];
+    if (!codes.includes(code)) codes.push(code);
+    codesByOrder.set(orderId, codes);
+  }
 
-  const rows = lines
-    .filter((l) => !l.display_type && Array.isArray(l.product_id))
-    .map((l) => {
-      // Odoo's display name is "[CODE] Product name" when a code exists.
-      const display = Array.isArray(l.product_id) ? l.product_id[1] : "";
-      const match = display.match(/^\[(.+?)\]\s*(.*)$/);
-      const code = match ? match[1] : "";
-      const productName = match ? match[2] : display;
-
-      return [
-        Array.isArray(l.order_id) ? l.order_id[1] : "",
-        code,
-        productName,
-        String(l.product_uom_qty ?? ""),
-        String(l.price_unit ?? ""),
-        String(l.discount ?? 0),
-        String(l.price_subtotal ?? ""),
-        String(l.price_total ?? ""),
-      ];
-    });
-
-  await sheets.spreadsheets.values.clear({
-    spreadsheetId: analysisSheetId,
-    range: "Productos!A1:Z100000",
-  });
-
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: analysisSheetId,
-    range: "Productos!A1",
-    valueInputOption: "RAW",
-    requestBody: { values: [headers, ...rows] },
-  });
+  return new Map([...codesByOrder].map(([id, codes]) => [id, codes.join(", ")]));
 }
 
 /** Write quotations to analysis sheet */
 export async function writeQuotationsToAnalysisSheet(
   quotations: OdooSalesOrder[],
-  dateFields: OdooDateField[] = []
+  dateFields: OdooDateField[] = [],
+  productCodes: Map<number, string> = new Map()
 ): Promise<void> {
   if (!quotations || quotations.length === 0) return;
 
@@ -410,7 +385,10 @@ export async function writeQuotationsToAnalysisSheet(
     range: "Cotizaciones!A1",
     valueInputOption: "RAW",
     requestBody: {
-      values: [saleOrderHeaders(dateFields), ...quotations.map((q) => saleOrderRow(q, dateFields))],
+      values: [
+        saleOrderHeaders(dateFields),
+        ...quotations.map((q) => saleOrderRow(q, dateFields, productCodes)),
+      ],
     },
   });
 }

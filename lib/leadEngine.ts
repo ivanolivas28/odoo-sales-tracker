@@ -16,7 +16,7 @@ import {
   writeContactsToAnalysisSheet,
   writeSalesOrdersToAnalysisSheet,
   writeQuotationsToAnalysisSheet,
-  writeProductsToAnalysisSheet,
+  buildProductCodesByOrder,
   formatOdooDatetime,
 } from "@/lib/google";
 
@@ -318,6 +318,11 @@ export async function runSync() {
 
       console.log(`[SYNC] Fetched ${allContacts.length} contacts, ${confirmedOrders.length} confirmed orders, ${quotations.length} quotations`);
 
+      // Product codes per order, shown as "M18-4VPDL-Q8, BRT-2X2, ..."
+      const orderIds = [...confirmedOrders, ...quotations].map((o) => o.id);
+      const productCodes =
+        orderIds.length > 0 ? buildProductCodesByOrder(await fetchOrderLines(orderIds)) : new Map<number, string>();
+
       // Create or get analysis sheet
       analysisSheetUrl = await createOrGetAnalysisSheet();
       console.log(`[SYNC] Analysis sheet: ${analysisSheetUrl}`);
@@ -328,19 +333,12 @@ export async function runSync() {
         console.log("[SYNC] Written contacts to sheet");
       }
       if (confirmedOrders.length > 0) {
-        await writeSalesOrdersToAnalysisSheet(confirmedOrders, dateFields);
+        await writeSalesOrdersToAnalysisSheet(confirmedOrders, dateFields, productCodes);
         console.log("[SYNC] Written confirmed orders to sheet");
       }
       if (quotations.length > 0) {
-        await writeQuotationsToAnalysisSheet(quotations, dateFields);
+        await writeQuotationsToAnalysisSheet(quotations, dateFields, productCodes);
         console.log("[SYNC] Written quotations to sheet");
-      }
-
-      const orderIds = [...confirmedOrders, ...quotations].map((o) => o.id);
-      if (orderIds.length > 0) {
-        const lines = await fetchOrderLines(orderIds);
-        await writeProductsToAnalysisSheet(lines);
-        console.log(`[SYNC] Written ${lines.length} product lines to sheet`);
       }
     } catch (err) {
       console.error("[SYNC] Analysis sheet export failed:", err);
