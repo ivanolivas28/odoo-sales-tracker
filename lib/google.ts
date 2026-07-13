@@ -167,7 +167,20 @@ export async function writeContactsToAnalysisSheet(contacts: OdooContact[]): Pro
   const analysisSheetId = settings?.analysisSheetId;
   if (!analysisSheetId) throw new Error("Analysis sheet not found");
 
-  const headers = ["ID", "Nombre", "Email", "Teléfono", "Móvil", "Ciudad", "Industria", "¿Cliente?", "Creado", "Actualizado"];
+  const headers = [
+    "ID",
+    "Nombre",
+    "Email",
+    "Teléfono",
+    "Móvil",
+    "Ciudad",
+    "Industria",
+    "Ranking Cliente",
+    "Ranking Proveedor",
+    "¿Es Cliente?",
+    "Fecha de Creación",
+    "Fecha de Actualización",
+  ];
 
   const rows = contacts.map((c) => [
     String(c.id || ""),
@@ -177,6 +190,8 @@ export async function writeContactsToAnalysisSheet(contacts: OdooContact[]): Pro
     c.mobile || "",
     c.city || "",
     c.industry_id ? c.industry_id[1] : "",
+    c.customer_rank ? String(c.customer_rank) : "0",
+    c.supplier_rank ? String(c.supplier_rank) : "0",
     c.customer_rank && c.customer_rank > 0 ? "Sí" : "No",
     c.create_date ? new Date(c.create_date).toLocaleDateString("es-MX") : "",
     c.write_date ? new Date(c.write_date).toLocaleDateString("es-MX") : "",
@@ -184,7 +199,7 @@ export async function writeContactsToAnalysisSheet(contacts: OdooContact[]): Pro
 
   await sheets.spreadsheets.values.clear({
     spreadsheetId: analysisSheetId,
-    range: "Contactos!A1:J10000",
+    range: "Contactos!A1:L10000",
   });
 
   await sheets.spreadsheets.values.update({
