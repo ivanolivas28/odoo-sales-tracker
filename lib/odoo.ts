@@ -74,22 +74,14 @@ export async function executeKw<T>(
 export interface OdooContact {
   id: number;
   name: string;
-  email?: string;
-  phone?: string;
-  mobile?: string;
-  city?: string;
-  create_date?: string;
 }
 
 export interface OdooSalesOrder {
   id: number;
   name: string;
   partner_id: [number, string];
-  date_order: string;
   amount_total: number;
   state: string;
-  create_date: string;
-  write_date: string;
 }
 
 /** Fetch ALL contacts from the Contacts module (type = contact) */
@@ -97,15 +89,7 @@ export async function fetchAllContacts(limit = 500, offset = 0): Promise<OdooCon
   return executeKw<OdooContact[]>("res.partner", "search_read", [
     [["type", "=", "contact"]],
     {
-      fields: [
-        "id",
-        "name",
-        "email",
-        "phone",
-        "mobile",
-        "city",
-        "create_date",
-      ],
+      fields: ["id", "name"],
       limit,
       offset,
       order: "write_date DESC",
@@ -144,16 +128,7 @@ export async function fetchSalesOrdersAboveThreshold(
     executeKw<OdooSalesOrder[]>("sale.order", "search_read", [
       [["state", "in", ["sale", "done"]], ["amount_total", ">=", minUSD]],
       {
-        fields: [
-          "id",
-          "name",
-          "partner_id",
-          "date_order",
-          "amount_total",
-          "state",
-          "create_date",
-          "write_date",
-        ],
+        fields: ["id", "name", "partner_id", "amount_total", "state"],
         order: "date_order DESC",
         limit: 10000,
       },
@@ -161,16 +136,7 @@ export async function fetchSalesOrdersAboveThreshold(
     executeKw<OdooSalesOrder[]>("sale.order", "search_read", [
       [["state", "=", "draft"], ["amount_total", ">=", minUSD]],
       {
-        fields: [
-          "id",
-          "name",
-          "partner_id",
-          "date_order",
-          "amount_total",
-          "state",
-          "create_date",
-          "write_date",
-        ],
+        fields: ["id", "name", "partner_id", "amount_total", "state"],
         order: "write_date DESC",
         limit: 10000,
       },

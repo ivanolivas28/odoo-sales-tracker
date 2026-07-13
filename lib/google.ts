@@ -178,29 +178,13 @@ export async function writeContactsToAnalysisSheet(contacts: OdooContact[]): Pro
   const analysisSheetId = settings?.analysisSheetId;
   if (!analysisSheetId) throw new Error("Analysis sheet not found");
 
-  const headers = [
-    "ID",
-    "Nombre",
-    "Email",
-    "Teléfono",
-    "Móvil",
-    "Ciudad",
-    "Fecha de Creación",
-  ];
+  const headers = ["ID", "Nombre"];
 
-  const rows = contacts.map((c) => [
-    String(c.id || ""),
-    c.name || "",
-    c.email || "",
-    c.phone || "",
-    c.mobile || "",
-    c.city || "",
-    c.create_date ? new Date(c.create_date).toLocaleDateString("es-MX") : "",
-  ]);
+  const rows = contacts.map((c) => [String(c.id || ""), c.name || ""]);
 
   await sheets.spreadsheets.values.clear({
     spreadsheetId: analysisSheetId,
-    range: "Contactos!A1:G10000",
+    range: "Contactos!A1:B10000",
   });
 
   await sheets.spreadsheets.values.update({
@@ -223,37 +207,19 @@ export async function writeSalesOrdersToAnalysisSheet(orders: OdooSalesOrder[]):
   const analysisSheetId = settings?.analysisSheetId;
   if (!analysisSheetId) throw new Error("Analysis sheet not found");
 
-  const headers = [
-    "ID",
-    "Número",
-    "Cliente",
-    "Fecha de creación",
-    "Fecha de orden",
-    "Monto Total",
-    "Estado",
-    "Días desde creación",
-  ];
+  const headers = ["ID", "Número", "Cliente", "Monto Total", "Estado"];
 
-  const now = new Date();
-  const rows = orders.map((o) => {
-    const createDate = new Date(o.create_date);
-    const daysSinceCreation = Math.floor((now.getTime() - createDate.getTime()) / (1000 * 60 * 60 * 24));
-
-    return [
-      String(o.id || ""),
-      o.name || "",
-      Array.isArray(o.partner_id) ? o.partner_id[1] : String(o.partner_id),
-      o.create_date ? new Date(o.create_date).toLocaleDateString("es-MX") : "",
-      o.date_order ? new Date(o.date_order).toLocaleDateString("es-MX") : "",
-      String(o.amount_total || 0),
-      o.state || "",
-      String(daysSinceCreation),
-    ];
-  });
+  const rows = orders.map((o) => [
+    String(o.id || ""),
+    o.name || "",
+    Array.isArray(o.partner_id) ? o.partner_id[1] : String(o.partner_id),
+    String(o.amount_total || 0),
+    o.state || "",
+  ]);
 
   await sheets.spreadsheets.values.clear({
     spreadsheetId: analysisSheetId,
-    range: "Órdenes!A1:H10000",
+    range: "Órdenes!A1:E10000",
   });
 
   await sheets.spreadsheets.values.update({
@@ -276,37 +242,19 @@ export async function writeQuotationsToAnalysisSheet(quotations: OdooSalesOrder[
   const analysisSheetId = settings?.analysisSheetId;
   if (!analysisSheetId) throw new Error("Analysis sheet not found");
 
-  const headers = [
-    "ID",
-    "Número",
-    "Cliente",
-    "Fecha de creación",
-    "Fecha de orden",
-    "Monto Total",
-    "Estado",
-    "Días pendiente",
-  ];
+  const headers = ["ID", "Número", "Cliente", "Monto Total", "Estado"];
 
-  const now = new Date();
-  const rows = quotations.map((q) => {
-    const writeDate = new Date(q.write_date);
-    const daysPending = Math.floor((now.getTime() - writeDate.getTime()) / (1000 * 60 * 60 * 24));
-
-    return [
-      String(q.id || ""),
-      q.name || "",
-      Array.isArray(q.partner_id) ? q.partner_id[1] : String(q.partner_id),
-      q.create_date ? new Date(q.create_date).toLocaleDateString("es-MX") : "",
-      q.date_order ? new Date(q.date_order).toLocaleDateString("es-MX") : "",
-      String(q.amount_total || 0),
-      q.state || "",
-      String(daysPending),
-    ];
-  });
+  const rows = quotations.map((q) => [
+    String(q.id || ""),
+    q.name || "",
+    Array.isArray(q.partner_id) ? q.partner_id[1] : String(q.partner_id),
+    String(q.amount_total || 0),
+    q.state || "",
+  ]);
 
   await sheets.spreadsheets.values.clear({
     spreadsheetId: analysisSheetId,
-    range: "Cotizaciones!A1:H10000",
+    range: "Cotizaciones!A1:E10000",
   });
 
   await sheets.spreadsheets.values.update({
