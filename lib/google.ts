@@ -184,7 +184,7 @@ export async function writeContactsToAnalysisSheet(contacts: OdooContact[]): Pro
     c.function || "",
     Array.isArray(c.industry_id) ? c.industry_id[1] : "",
     c.customer_rank && c.customer_rank > 0 ? "Sí" : "No",
-    c.create_date ? String(c.create_date).slice(0, 10) : "",
+    formatOdooDatetime(c.create_date),
   ]);
 
   await sheets.spreadsheets.values.clear({
@@ -198,6 +198,30 @@ export async function writeContactsToAnalysisSheet(contacts: OdooContact[]): Pro
     valueInputOption: "RAW",
     requestBody: { values: [headers, ...rows] },
   });
+}
+
+// Odoo stores datetimes in UTC; its own exports convert them to the user's
+// timezone. Do the same so the sheet matches what the user sees in Odoo.
+const ODOO_TIMEZONE = process.env.ODOO_TIMEZONE || "America/Mexico_City";
+
+function formatOdooDatetime(utcDatetime?: string | false): string {
+  if (!utcDatetime) return "";
+  const date = new Date(String(utcDatetime).replace(" ", "T") + "Z");
+  if (isNaN(date.getTime())) return String(utcDatetime);
+
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: ODOO_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}:${get("second")}`;
 }
 
 const SALE_ORDER_HEADERS = [
@@ -238,7 +262,7 @@ function saleOrderRow(o: OdooSalesOrder): string[] {
   return [
     String(o.id || ""),
     o.name || "",
-    o.create_date || "",
+    formatOdooDatetime(o.create_date),
     Array.isArray(o.partner_id) ? o.partner_id[1] : "",
     Array.isArray(o.user_id) ? o.user_id[1] : "",
     Array.isArray(o.company_id) ? o.company_id[1] : "",
