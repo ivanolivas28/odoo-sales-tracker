@@ -94,11 +94,8 @@ export interface OdooSalesOrder {
   amount_untaxed: number;
   currency_id?: [number, string];
   state: string;
-  validity_date?: string;
   create_date: string;
   write_date: string;
-  user_id?: [number, string];
-  company_id?: [number, string];
 }
 
 /** Fetch ALL contacts from the Contacts module (type = contact) */
@@ -166,11 +163,8 @@ export async function fetchSalesOrdersAboveThreshold(
           "amount_untaxed",
           "currency_id",
           "state",
-          "validity_date",
           "create_date",
           "write_date",
-          "user_id",
-          "company_id",
         ],
         order: "date_order DESC",
         limit: 10000,
@@ -188,11 +182,8 @@ export async function fetchSalesOrdersAboveThreshold(
           "amount_untaxed",
           "currency_id",
           "state",
-          "validity_date",
           "create_date",
           "write_date",
-          "user_id",
-          "company_id",
         ],
         order: "write_date DESC",
         limit: 10000,
